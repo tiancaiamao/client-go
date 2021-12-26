@@ -36,6 +36,7 @@
 package client
 
 import (
+	"fmt"
 	"context"
 	"math"
 	"runtime/trace"
@@ -57,6 +58,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/metadata"
+	"github.com/pingcap/kvproto/proto/kitex_gen/tikvpb/tikv"
+	"github.com/cloudwego/kitex/client"
 )
 
 type batchCommandsEntry struct {
@@ -420,7 +423,7 @@ func (l *tryLock) unlockForRecreate() {
 }
 
 type batchCommandsStream struct {
-	tikvpb.Tikv_BatchCommandsClient
+	tikv.Tikv_BatchCommandsClient
 	forwardedHost string
 }
 
@@ -444,15 +447,33 @@ func (s *batchCommandsStream) recv() (resp *tikvpb.BatchCommandsResponse, err er
 		return nil, errors.New("injected error in batchRecvLoop")
 	}
 	// When `conn.Close()` is called, `client.Recv()` will return an error.
-	resp, err = s.Recv()
-	return
+	resp = new(tikvpb.BatchCommandsResponse)
+	err = s.RecvMsg(resp)
+	// resp, err = s.Recv()
+	return resp, err
 }
 
 // recreate creates a new BatchCommands stream. The conn should be ready for work.
-func (s *batchCommandsStream) recreate(conn *grpc.ClientConn) error {
-	tikvClient := tikvpb.NewTikvClient(conn)
+func (s *batchCommandsStream) recreate(target string) error {
+	// tikvClient := tikvpb.NewTikvClient(conn)
+	// ctx := context.TODO()
+	// // Set metadata for forwarding stream.
+	// if s.forwardedHost != "" {
+	// 	ctx = metadata.AppendToOutgoingContext(ctx, forwardMetadataKey, s.forwardedHost)
+	// }
+	// streamClient, err := tikvClient.BatchCommands(ctx)
+	// if err != nil {
+	// 	return errors.WithStack(err)
+	// }
+	// s.Tikv_BatchCommandsClient = streamClient
+	// return nil
+
+	tikvClient, err := tikv.NewClient("tikvpb", client.WithHostPorts(target))
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
 	ctx := context.TODO()
-	// Set metadata for forwarding stream.
 	if s.forwardedHost != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, forwardMetadataKey, s.forwardedHost)
 	}
@@ -500,6 +521,8 @@ func (c *batchCommandsClient) isStopped() bool {
 }
 
 func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchCommandsRequest) {
+	fmt.Println("in batchCommandsClient.send()...", req.GetRequestIds())
+
 	err := c.initBatchClient(forwardedHost)
 	if err != nil {
 		logutil.BgLogger().Warn(
@@ -516,7 +539,9 @@ func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchComman
 	if forwardedHost != "" {
 		client = c.forwardedClients[forwardedHost]
 	}
-	if err := client.Send(req); err != nil {
+
+	err = client.SendMsg(req)
+	if err != nil {
 		logutil.BgLogger().Info(
 			"sending batch commands meets error",
 			zap.String("target", c.target),
@@ -568,7 +593,7 @@ func (c *batchCommandsClient) recreateStreamingClientOnce(streamClient *batchCom
 	err := c.waitConnReady()
 	// Re-establish a application layer stream. TCP layer is handled by gRPC.
 	if err == nil {
-		err := streamClient.recreate(c.conn)
+		err := streamClient.recreate(c.target)
 		if err == nil {
 			logutil.BgLogger().Info(
 				"batchRecvLoop re-create streaming success",
@@ -622,6 +647,7 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 		}
 
 		responses := resp.GetResponses()
+		fmt.Println("recv response ====", resp.GetRequestIds())
 		for i, requestID := range resp.GetRequestIds() {
 			value, ok := c.batched.Load(requestID)
 			if !ok {
@@ -676,7 +702,7 @@ func (c *batchCommandsClient) recreateStreamingClient(err error, streamClient *b
 	waitConnReady := atomic.CompareAndSwapUint64(&c.epoch, *epoch, *epoch+1)
 	if !waitConnReady {
 		*epoch = atomic.LoadUint64(&c.epoch)
-		if err := streamClient.recreate(c.conn); err != nil {
+		if err := streamClient.recreate(c.target); err != nil {
 			logutil.BgLogger().Info(
 				"batchRecvLoop re-create streaming fail",
 				zap.String("target", c.target),
@@ -709,7 +735,7 @@ func (c *batchCommandsClient) recreateStreamingClient(err error, streamClient *b
 
 func (c *batchCommandsClient) newBatchStream(forwardedHost string) (*batchCommandsStream, error) {
 	batchStream := &batchCommandsStream{forwardedHost: forwardedHost}
-	if err := batchStream.recreate(c.conn); err != nil {
+	if err := batchStream.recreate(c.target); err != nil {
 		return nil, err
 	}
 	return batchStream, nil
@@ -796,6 +822,7 @@ func sendBatchRequest(
 		return nil, errors.WithStack(ctx.Err())
 	case <-timer.C:
 		atomic.StoreInt32(&entry.canceled, 1)
+		fmt.Println("receive response timeout ...", timeout, req)
 		return nil, errors.WithMessage(context.DeadlineExceeded, "wait recvLoop")
 	}
 }
