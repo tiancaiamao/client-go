@@ -521,7 +521,7 @@ func (c *batchCommandsClient) isStopped() bool {
 }
 
 func (c *batchCommandsClient) send(forwardedHost string, req *tikvpb.BatchCommandsRequest) {
-	fmt.Println("in batchCommandsClient.send()...", req.GetRequestIds())
+	// fmt.Println("in batchCommandsClient.send()...", req.GetRequestIds())
 
 	err := c.initBatchClient(forwardedHost)
 	if err != nil {
@@ -647,7 +647,7 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 		}
 
 		responses := resp.GetResponses()
-		fmt.Println("recv response ====", resp.GetRequestIds())
+		// fmt.Println("recv response ====", resp.GetRequestIds())
 		for i, requestID := range resp.GetRequestIds() {
 			value, ok := c.batched.Load(requestID)
 			if !ok {

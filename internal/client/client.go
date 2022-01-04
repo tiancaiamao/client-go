@@ -399,11 +399,10 @@ func (c *RPCClient) SendRequest(ctx context.Context, addr string, req *tikvrpc.R
 
 	// TiDB RPC server supports batch RPC, but batch connection will send heart beat, It's not necessary since
 	// request to TiDB is not high frequency.
-	if config.GetGlobalConfig().TiKVClient.MaxBatchSize > 0 && enableBatch &&
-		(req.Type != tikvrpc.CmdScan && req.Type != tikvrpc.CmdCop && req.Type != tikvrpc.CmdBatchCop) {
+	if config.GetGlobalConfig().TiKVClient.MaxBatchSize > 0 && enableBatch {
 		if batchReq := req.ToBatchCommandsRequest(); batchReq != nil {
 			defer trace.StartRegion(ctx, req.Type.String()).End()
-			fmt.Println("before batch send", req.Type)
+			// fmt.Println("before batch send", req.Type)
 			x, y := sendBatchRequest(ctx, addr, req.ForwardedHost, connArray.batchConn, batchReq, timeout)
 			return x, y
 		}

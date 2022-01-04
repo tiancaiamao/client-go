@@ -35,7 +35,7 @@
 package txnsnapshot
 
 import (
-	"fmt"
+	// "fmt"
 	"bytes"
 	"context"
 
@@ -251,11 +251,11 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 		if s.snapshot.resourceGroupTag == nil && s.snapshot.resourceGroupTagger != nil {
 			s.snapshot.resourceGroupTagger(req)
 		}
-		fmt.Println("before snapshot unlock")
+		// fmt.Println("before snapshot unlock")
 		s.snapshot.mu.RUnlock()
-		fmt.Println("after snapshot unlock... and before send")
+		// fmt.Println("after snapshot unlock... and before send")
 		resp, err := sender.SendReq(bo, req, loc.Region, client.ReadTimeoutMedium)
-		fmt.Println("send request ...", req, err)
+		// fmt.Println("send request ...", req, err)
 		if err != nil {
 			return err
 		}
