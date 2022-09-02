@@ -35,6 +35,7 @@
 package transaction
 
 import (
+	// "fmt"
 	"encoding/hex"
 	"math"
 	"strconv"
@@ -151,6 +152,17 @@ func (c *twoPhaseCommitter) buildPrewriteRequest(batch batchMutations, txnSize u
 		MinCommitTs:       minCommitTS,
 		MaxCommitTs:       c.maxCommitTS,
 		AssertionLevel:    assertionLevel,
+
+	}
+	if c.txn.qos != nil {
+		req.Priority = atomic.LoadUint64(c.txn.qos)
+		// atomic.AddUint64(c.txn.qos, 1)
+		xx := len(req.Mutations)
+		cost := xx * xx * xx
+		atomic.AddUint64(c.txn.qos, uint64(cost))
+		// fmt.Println("the length is", len(req.Mutations),
+		// 	"cost =", cost,
+		// 	"and current priority is", atomic.LoadUint64(c.txn.qos))
 	}
 
 	if _, err := util.EvalFailpoint("invalidMaxCommitTS"); err == nil {
@@ -182,6 +194,17 @@ func (c *twoPhaseCommitter) buildPrewriteRequest(batch batchMutations, txnSize u
 		c.resourceGroupTagger(r)
 	}
 	return r
+}
+
+var virtualTime uint64
+
+func updateVirtualTime(vt *uint64, val uint64) uint64 {
+	oldVal := atomic.LoadUint64(vt)
+	if val > oldVal {
+		atomic.StoreUint64(vt, val)
+		return val
+	}
+	return oldVal
 }
 
 func (action actionPrewrite) handleSingleBatch(c *twoPhaseCommitter, bo *retry.Backoffer, batch batchMutations) (err error) {
@@ -303,6 +326,22 @@ func (action actionPrewrite) handleSingleBatch(c *twoPhaseCommitter, bo *retry.B
 		prewriteResp := resp.Resp.(*kvrpcpb.PrewriteResponse)
 		keyErrs := prewriteResp.GetErrors()
 		if len(keyErrs) == 0 {
+
+			if c.txn.qos != nil {
+				currVT := updateVirtualTime(&virtualTime, prewriteResp.VirtualTime)
+				// updateVirtualTime(&virtualTime, copResp.VirtualTime)
+
+				oldVal := atomic.LoadUint64(c.txn.qos)
+				// oldVal += prewriteResp.Cost
+				if currVT > oldVal {
+					oldVal = oldVal + (currVT - oldVal) / 2
+					atomic.StoreUint64(c.txn.qos, oldVal)
+				// } else {
+				// 	atomic.StoreUint64(c.txn.qos, oldVal)
+				}
+			}
+
+
 			// Clear the RPC Error since the request is evaluated successfully.
 			sender.SetRPCError(nil)
 

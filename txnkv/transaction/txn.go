@@ -83,6 +83,7 @@ type TxnOptions struct {
 	TxnScope                  string
 	StartTS                   *uint64
 	MemoryFootprintChangeHook func(uint64)
+	Priority *uint64
 }
 
 // KVTxn contains methods to interact with a TiKV transaction.
@@ -126,6 +127,8 @@ type KVTxn struct {
 	interceptor    interceptor.RPCInterceptor
 	assertionLevel kvrpcpb.AssertionLevel
 	*util.RequestSource
+
+	qos *uint64
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -241,6 +244,11 @@ func (txn *KVTxn) SetSchemaVer(schemaVer SchemaVer) {
 func (txn *KVTxn) SetPriority(pri txnutil.Priority) {
 	txn.priority = pri
 	txn.GetSnapshot().SetPriority(pri)
+}
+
+func (txn *KVTxn) SetQoS(priority *uint64) {
+	// fmt.Println("here, set qos!!! in cliet-go", priority)
+	txn.qos = priority
 }
 
 // SetResourceGroupTag sets the resource tag for both write and read.
