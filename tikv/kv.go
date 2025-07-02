@@ -181,6 +181,7 @@ func (s *KVStore) CheckVisibility(startTS uint64) error {
 	lastCacheTime := s.gcStateCacheMu.lastCacheTime
 	cachedTxnSafePoint := s.gcStateCacheMu.cachedTxnSafePoint
 	s.gcStateCacheMu.RUnlock()
+
 	diff := time.Since(lastCacheTime)
 
 	if diff > (GcStateCacheInterval - gcCPUTimeInaccuracyBound) {
@@ -360,7 +361,10 @@ func (s *KVStore) IsLatchEnabled() bool {
 }
 
 func (s *KVStore) runTxnSafePointUpdater() {
-	defer s.wg.Done()
+	defer func() {
+		s.wg.Done()
+		logutil.BgLogger().Warn("runTxnSafePointUpdater exit")
+	}()
 	d := pollTxnSafePointInterval
 	gcStatesClient := s.pdClient.GetGCStatesClient(uint32(s.getCodec().GetKeyspaceID()))
 	for {
@@ -370,6 +374,11 @@ func (s *KVStore) runTxnSafePointUpdater() {
 			if err == nil {
 				metrics.TiKVLoadSafepointCounter.WithLabelValues("ok").Inc()
 				s.UpdateTxnSafePointCache(gcStates.TxnSafePoint, now)
+
+				logutil.BgLogger().Warn("CheckVisibility",
+					zap.Time("lastCacheTime", now),
+					zap.Uint64("cachedTxnSafePoint", gcStates.TxnSafePoint))
+
 				d = pollTxnSafePointInterval
 			} else {
 				metrics.TiKVLoadSafepointCounter.WithLabelValues("fail").Inc()
