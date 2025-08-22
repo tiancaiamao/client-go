@@ -35,6 +35,8 @@
 package transaction
 
 import (
+	"fmt"
+	"encoding/hex"
 	"bytes"
 	"context"
 	errors2 "errors"
@@ -572,6 +574,19 @@ func (c *twoPhaseCommitter) initKeysAndMutations(ctx context.Context) error {
 			if !flags.HasLocked() {
 				continue
 			}
+
+			isUnnecessaryKV, err := filter.IsUnnecessaryKeyValue(key, value, flags)
+			if err != nil {
+				return err
+			}
+			if isUnnecessaryKV {
+				// fmt.Println("ignore lock key ==", hex.EncodeToString(key))
+				continue
+			}
+
+
+			fmt.Println("commit lock key 111 =====", hex.EncodeToString(key))
+
 			op = kvrpcpb.Op_Lock
 			lockCnt++
 		} else {
@@ -581,6 +596,9 @@ func (c *twoPhaseCommitter) initKeysAndMutations(ctx context.Context) error {
 				isUnnecessaryKV, err = filter.IsUnnecessaryKeyValue(key, value, flags)
 				if err != nil {
 					return err
+				}
+				if isUnnecessaryKV {
+					continue
 				}
 			}
 			if len(value) > 0 {
@@ -593,6 +611,9 @@ func (c *twoPhaseCommitter) initKeysAndMutations(ctx context.Context) error {
 					// were forgetting removing pessimistic locks added before.
 					op = kvrpcpb.Op_Lock
 					lockCnt++
+
+					fmt.Println("commit lock key 222 =====", hex.EncodeToString(key))
+
 				} else {
 					op = kvrpcpb.Op_Put
 					if flags.HasPresumeKeyNotExists() {
@@ -619,6 +640,9 @@ func (c *twoPhaseCommitter) initKeysAndMutations(ctx context.Context) error {
 						if flags.HasLocked() {
 							op = kvrpcpb.Op_Lock
 							lockCnt++
+
+							fmt.Println("commit lock key 333 =====", hex.EncodeToString(key))
+
 						} else {
 							continue
 						}

@@ -35,10 +35,12 @@
 package transaction
 
 import (
+	// "fmt"
 	"math/rand"
 	"strings"
 	"sync/atomic"
 	"time"
+	// "encoding/hex"
 
 	"github.com/pingcap/kvproto/pkg/errorpb"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
@@ -335,6 +337,17 @@ func (action actionPessimisticLock) handlePessimisticLockResponseNormalMode(
 
 	locks, finished, err := action.handleKeyErrorForResolve(c, keyErrs)
 	if err != nil {
+		if val := bo.GetCtx().Value("fk"); val != nil {
+			// fmt.Println("1111111111")
+			if _, ok := errors.Unwrap(err).(*tikverr.ErrWriteConflict); ok {
+			// if conflict, ok := errors.Unwrap(err).(*tikverr.ErrWriteConflict); ok {
+				// fmt.Println("ignore write conflict on ==", conflict.WriteConflict,
+				// 	"key ==", hex.EncodeToString(conflict.Key))
+				return true, nil
+			}
+		}
+
+
 		return finished, err
 	}
 	if len(locks) == 0 {
