@@ -136,6 +136,8 @@ const (
 	// NoResolvePolicy means do not resolve, but return write conflict errors directly.
 	// This can be used to let the upper layer choose to retry in pessimistic mode.
 	NoResolvePolicy
+	// ForDDLProtocol is using its own way of resolving policy
+	ForDDLResolvePolicy
 )
 
 func (p PrewriteEncounterLockPolicy) String() string {
@@ -526,7 +528,19 @@ func (txn *KVTxn) SetAssertionLevel(assertionLevel kvrpcpb.AssertionLevel) {
 
 // SetPrewriteEncounterLockPolicy specifies the behavior when prewrite encounters locks.
 func (txn *KVTxn) SetPrewriteEncounterLockPolicy(policy PrewriteEncounterLockPolicy) {
+	if policy == ForDDLResolvePolicy {
+		// This option should be set using SetForDDL API.
+		return
+	}
+	if txn.prewriteEncounterLockPolicy == ForDDLResolvePolicy {
+		return
+	}
+
 	txn.prewriteEncounterLockPolicy = policy
+}
+
+func (txn *KVTxn) SetForDDLProtocol() {
+	txn.prewriteEncounterLockPolicy = ForDDLResolvePolicy
 }
 
 // IsPessimistic returns true if it is pessimistic.

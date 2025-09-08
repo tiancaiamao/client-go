@@ -125,6 +125,7 @@ type KVSnapshot struct {
 	committedLocks  util.TSSet
 	scanBatchSize   int
 	readTimeout     time.Duration
+	forDDLProtocol bool
 
 	// Cache the result of Get and BatchGet.
 	// The invariance is that calling Get or BatchGet multiple times using the same start ts,
@@ -1130,6 +1131,11 @@ func (s *KVSnapshot) mergeRegionRequestStats(rpcStats *locate.RegionRequestRunti
 // SetKVReadTimeout sets timeout for individual KV read operations under this snapshot
 func (s *KVSnapshot) SetKVReadTimeout(readTimeout time.Duration) {
 	s.readTimeout = readTimeout
+}
+
+// SetForDDLProtocol sets timeout for individual KV read operations under this snapshot
+func (s *KVSnapshot) SetForDDLProtocol() {
+	s.forDDLProtocol = true
 }
 
 // GetKVReadTimeout returns timeout for individual KV read operations under this snapshot or 0 if timeout is not set
