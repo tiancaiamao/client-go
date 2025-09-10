@@ -26,11 +26,11 @@ func patchCmdCtx(req *Request, cmd CmdType, ctx *kvrpcpb.Context) bool {
 			req.Req = &cmd
 		}
 		req.rev++
-	case CmdDDLScan:
+	case CmdDDLBackfillScan:
 		if req.rev == 0 {
-			req.DDLScan().Context = ctx
+			req.DDLBackfillScan().Context = ctx
 		} else {
-			cmd := *req.DDLScan()
+			cmd := *req.DDLBackfillScan()
 			cmd.Context = ctx
 			req.Req = &cmd
 		}
@@ -398,7 +398,7 @@ func isValidReqType(cmd CmdType) bool {
 		return true
 	case CmdScan:
 		return true
-	case CmdDDLScan:
+	case CmdDDLBackfillScan:
 		return true
 	case CmdPrewrite:
 		return true

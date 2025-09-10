@@ -232,8 +232,8 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 		var reqType tikvrpc.CmdType
 		var sreq any
 		if s.snapshot.forDDLProtocol {
-			reqType = tikvrpc.CmdDDLScan
-			sreq = &kvrpcpb.DDLScanRequest{
+			reqType = tikvrpc.CmdDDLBackfillScan
+			sreq = &kvrpcpb.DDLBackfillScanRequest{
 				StartKey:   s.nextStartKey,
 				EndKey:     reqEndKey,
 				Version:    s.startTS(),
@@ -303,8 +303,8 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 		var keyErr *kvrpcpb.KeyError
 		var kvPairs []*kvrpcpb.KvPair
 		if s.snapshot.forDDLProtocol {
-			cmdScanResp := resp.Resp.(*kvrpcpb.DDLScanResponse)
-			keyErr = cmdScanResp.GetError()
+			cmdScanResp := resp.Resp.(*kvrpcpb.DDLBackfillScanResponse)
+			// keyErr = cmdScanResp.GetError()
 			kvPairs = cmdScanResp.Pairs
 		} else {
 			cmdScanResp := resp.Resp.(*kvrpcpb.ScanResponse)

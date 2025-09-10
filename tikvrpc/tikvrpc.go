@@ -76,7 +76,7 @@ const (
 	CmdPrepareFlashbackToVersion
 	CmdFlush
 	CmdBufferBatchGet
-	CmdDDLScan
+	CmdDDLBackfillScan
 
 	CmdRawGet CmdType = 256 + iota
 	CmdRawBatchGet
@@ -235,7 +235,7 @@ func (t CmdType) String() string {
 		return "Flush"
 	case CmdBufferBatchGet:
 		return "BufferBatchGet"
-	case CmdDDLScan:
+	case CmdDDLBackfillScan:
 		return "DDLScan"
 	}
 	return "Unknown"
@@ -364,8 +364,8 @@ func (req *Request) Scan() *kvrpcpb.ScanRequest {
 }
 
 // DDLScan returns DDLScanRequest in request.
-func (req *Request) DDLScan() *kvrpcpb.DDLScanRequest {
-	return req.Req.(*kvrpcpb.DDLScanRequest)
+func (req *Request) DDLBackfillScan() *kvrpcpb.DDLBackfillScanRequest {
+	return req.Req.(*kvrpcpb.DDLBackfillScanRequest)
 }
 
 // Prewrite returns PrewriteRequest in request.
@@ -629,8 +629,8 @@ func (req *Request) ToBatchCommandsRequest() *tikvpb.BatchCommandsRequest_Reques
 		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_Get{Get: req.Get()}}
 	case CmdScan:
 		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_Scan{Scan: req.Scan()}}
-	case CmdDDLScan:
-		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_DDLScan{DDLScan: req.DDLScan()}}
+	case CmdDDLBackfillScan:
+		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_DDLBackfillScan{DDLBackfillScan: req.DDLBackfillScan()}}
 	case CmdPrewrite:
 		return &tikvpb.BatchCommandsRequest_Request{Cmd: &tikvpb.BatchCommandsRequest_Request_Prewrite{Prewrite: req.Prewrite()}}
 	case CmdCommit:
@@ -705,8 +705,8 @@ func (req *Request) GetSize() int {
 		size = req.BatchGet().Size()
 	case CmdScan:
 		size = req.Scan().Size()
-	case CmdDDLScan:
-		size = req.DDLScan().Size()
+	case CmdDDLBackfillScan:
+		size = req.DDLBackfillScan().Size()
 	case CmdCop:
 		size = req.Cop().Size()
 	case CmdPrewrite:
@@ -760,8 +760,8 @@ func FromBatchCommandsResponse(res *tikvpb.BatchCommandsResponse_Response) (*Res
 		return &Response{Resp: res.Get}, nil
 	case *tikvpb.BatchCommandsResponse_Response_Scan:
 		return &Response{Resp: res.Scan}, nil
-	case *tikvpb.BatchCommandsResponse_Response_DDLScan:
-		return &Response{Resp: res.DDLScan}, nil
+	case *tikvpb.BatchCommandsResponse_Response_DDLBackfillScan:
+		return &Response{Resp: res.DDLBackfillScan}, nil
 	case *tikvpb.BatchCommandsResponse_Response_Prewrite:
 		return &Response{Resp: res.Prewrite}, nil
 	case *tikvpb.BatchCommandsResponse_Response_Commit:
@@ -927,7 +927,7 @@ func GenRegionErrorResp(req *Request, e *errorpb.Error) (*Response, error) {
 		p = &kvrpcpb.ScanResponse{
 			RegionError: e,
 		}
-	case CmdDDLScan:
+	case CmdDDLBackfillScan:
 		p = &kvrpcpb.ScanResponse{
 			RegionError: e,
 		}
@@ -1182,8 +1182,8 @@ func CallRPC(ctx context.Context, client tikvpb.TikvClient, req *Request) (*Resp
 		resp.Resp, err = client.KvGet(ctx, req.Get())
 	case CmdScan:
 		resp.Resp, err = client.KvScan(ctx, req.Scan())
-	case CmdDDLScan:
-		resp.Resp, err = client.KvDDLScan(ctx, req.DDLScan())
+	case CmdDDLBackfillScan:
+		resp.Resp, err = client.KvDDLBackfillScan(ctx, req.DDLBackfillScan())
 	case CmdPrewrite:
 		resp.Resp, err = client.KvPrewrite(ctx, req.Prewrite())
 	case CmdPessimisticLock:
@@ -1489,8 +1489,8 @@ func (req *Request) GetStartTS() uint64 {
 		return req.Get().GetVersion()
 	case CmdScan:
 		return req.Scan().GetVersion()
-	case CmdDDLScan:
-		return req.DDLScan().GetVersion()
+	case CmdDDLBackfillScan:
+		return req.DDLBackfillScan().GetVersion()
 	case CmdPrewrite:
 		return req.Prewrite().GetStartVersion()
 	case CmdCommit:

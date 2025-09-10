@@ -213,6 +213,7 @@ type KVTxn struct {
 	flushBatchDurationEWMA ewma.MovingAverage
 
 	prewriteEncounterLockPolicy PrewriteEncounterLockPolicy
+	forDDL bool
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -528,19 +529,11 @@ func (txn *KVTxn) SetAssertionLevel(assertionLevel kvrpcpb.AssertionLevel) {
 
 // SetPrewriteEncounterLockPolicy specifies the behavior when prewrite encounters locks.
 func (txn *KVTxn) SetPrewriteEncounterLockPolicy(policy PrewriteEncounterLockPolicy) {
-	if policy == ForDDLResolvePolicy {
-		// This option should be set using SetForDDL API.
-		return
-	}
-	if txn.prewriteEncounterLockPolicy == ForDDLResolvePolicy {
-		return
-	}
-
 	txn.prewriteEncounterLockPolicy = policy
 }
 
 func (txn *KVTxn) SetForDDLProtocol() {
-	txn.prewriteEncounterLockPolicy = ForDDLResolvePolicy
+	txn.forDDL = true
 }
 
 // IsPessimistic returns true if it is pessimistic.
@@ -841,6 +834,10 @@ func (txn *KVTxn) Commit(ctx context.Context) error {
 	}
 	if !txn.isPipelined && committer.mutations.Len() == 0 {
 		return nil
+	}
+
+	if txn.forDDL {
+		return committer.ddlBackFillCommit()
 	}
 
 	defer func() {
