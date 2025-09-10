@@ -836,10 +836,6 @@ func (txn *KVTxn) Commit(ctx context.Context) error {
 		return nil
 	}
 
-	if txn.forDDL {
-		return committer.ddlBackFillCommit()
-	}
-
 	defer func() {
 		detail := committer.getDetail()
 		detail.Mu.Lock()
