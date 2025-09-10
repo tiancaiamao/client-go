@@ -136,8 +136,6 @@ const (
 	// NoResolvePolicy means do not resolve, but return write conflict errors directly.
 	// This can be used to let the upper layer choose to retry in pessimistic mode.
 	NoResolvePolicy
-	// ForDDLProtocol is using its own way of resolving policy
-	ForDDLResolvePolicy
 )
 
 func (p PrewriteEncounterLockPolicy) String() string {
@@ -213,7 +211,6 @@ type KVTxn struct {
 	flushBatchDurationEWMA ewma.MovingAverage
 
 	prewriteEncounterLockPolicy PrewriteEncounterLockPolicy
-	forDDL bool
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -530,10 +527,6 @@ func (txn *KVTxn) SetAssertionLevel(assertionLevel kvrpcpb.AssertionLevel) {
 // SetPrewriteEncounterLockPolicy specifies the behavior when prewrite encounters locks.
 func (txn *KVTxn) SetPrewriteEncounterLockPolicy(policy PrewriteEncounterLockPolicy) {
 	txn.prewriteEncounterLockPolicy = policy
-}
-
-func (txn *KVTxn) SetForDDLProtocol() {
-	txn.forDDL = true
 }
 
 // IsPessimistic returns true if it is pessimistic.

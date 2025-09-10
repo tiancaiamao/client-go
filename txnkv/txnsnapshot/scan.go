@@ -228,38 +228,21 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 				reqStartKey = loc.StartKey
 			}
 		}
-
-		var reqType tikvrpc.CmdType
-		var sreq any
-		if s.snapshot.forDDLProtocol {
-			reqType = tikvrpc.CmdDDLBackfillScan
-			sreq = &kvrpcpb.DDLBackfillScanRequest{
-				StartKey:   s.nextStartKey,
-				EndKey:     reqEndKey,
-				Version:    s.startTS(),
-			}
-			if s.reverse {
-				panic("ddl does not use this")
-			}
-		} else {
-			reqType = tikvrpc.CmdScan
-			req := &kvrpcpb.ScanRequest{
-				StartKey:   s.nextStartKey,
-				EndKey:     reqEndKey,
-				Limit:      uint32(s.batchSize),
-				Version:    s.startTS(),
-				KeyOnly:    s.snapshot.keyOnly,
-				SampleStep: s.snapshot.sampleStep,
-			}
-			if s.reverse {
-				req.StartKey = s.nextEndKey
-				req.EndKey = reqStartKey
-				req.Reverse = true
-			}
-			sreq = req
+		sreq := &kvrpcpb.ScanRequest{
+			StartKey:   s.nextStartKey,
+			EndKey:     reqEndKey,
+			Limit:      uint32(s.batchSize),
+			Version:    s.startTS(),
+			KeyOnly:    s.snapshot.keyOnly,
+			SampleStep: s.snapshot.sampleStep,
+		}
+		if s.reverse {
+			sreq.StartKey = s.nextEndKey
+			sreq.EndKey = reqStartKey
+			sreq.Reverse = true
 		}
 		s.snapshot.mu.RLock()
-		req := tikvrpc.NewReplicaReadRequest(reqType, sreq, s.snapshot.mu.replicaRead, &s.snapshot.replicaReadSeed, kvrpcpb.Context{
+		req := tikvrpc.NewReplicaReadRequest(tikvrpc.CmdScan, sreq, s.snapshot.mu.replicaRead, &s.snapshot.replicaReadSeed, kvrpcpb.Context{
 			Priority:         s.snapshot.priority.ToPB(),
 			NotFillCache:     s.snapshot.notFillCache,
 			TaskId:           s.snapshot.mu.taskID,
@@ -299,18 +282,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 		if resp.Resp == nil {
 			return errors.WithStack(tikverr.ErrBodyMissing)
 		}
-
-		var keyErr *kvrpcpb.KeyError
-		var kvPairs []*kvrpcpb.KvPair
-		if s.snapshot.forDDLProtocol {
-			cmdScanResp := resp.Resp.(*kvrpcpb.DDLBackfillScanResponse)
-			// keyErr = cmdScanResp.GetError()
-			kvPairs = cmdScanResp.Pairs
-		} else {
-			cmdScanResp := resp.Resp.(*kvrpcpb.ScanResponse)
-			keyErr = cmdScanResp.GetError()
-			kvPairs = cmdScanResp.Pairs
-		}
+		cmdScanResp := resp.Resp.(*kvrpcpb.ScanResponse)
 
 		err = s.snapshot.store.CheckVisibility(s.startTS())
 		if err != nil {
@@ -319,7 +291,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 
 		// When there is a response-level key error, the returned pairs are incomplete.
 		// We should resolve the lock first and then retry the same request.
-		if keyErr != nil {
+		if keyErr := cmdScanResp.GetError(); keyErr != nil {
 			lock, err := txnlock.ExtractLockFromKeyErr(keyErr)
 			if err != nil {
 				return err
@@ -345,6 +317,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 			continue
 		}
 
+		kvPairs := cmdScanResp.Pairs
 		// Check if kvPair contains error, it should be a Lock.
 		for _, pair := range kvPairs {
 			if keyErr := pair.GetError(); keyErr != nil && len(pair.Key) == 0 {
