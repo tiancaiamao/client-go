@@ -93,6 +93,7 @@ var (
 )
 
 type kvstore interface {
+	CheckVisibility(startTime uint64) error
 	// GetRegionCache gets the RegionCache.
 	GetRegionCache() *locate.RegionCache
 	// SplitRegions splits regions by splitKeys.

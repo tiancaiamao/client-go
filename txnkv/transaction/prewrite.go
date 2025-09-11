@@ -179,7 +179,6 @@ func (c *twoPhaseCommitter) buildPrewriteRequest(batch batchMutations, txnSize u
 		MaxCommitTs:            c.maxCommitTS,
 		AssertionLevel:         assertionLevel,
 		ForUpdateTsConstraints: forUpdateTSConstraints,
-		ForDdlProtocol: c.txn.prewriteEncounterLockPolicy  == ForDDLResolvePolicy,
 	}
 
 	if _, err := util.EvalFailpoint("invalidMaxCommitTS"); err == nil {

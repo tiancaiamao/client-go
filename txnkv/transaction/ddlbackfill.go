@@ -15,8 +15,6 @@ import (
 
 func (txn *KVTxn) BackfillScan(startKey []byte, endKey []byte, batchSize int) (kvrpcpb.DDLBackfillScanResponse, error) {
 	sender := locate.NewRegionRequestSender(txn.store.GetRegionCache(), txn.store.GetTiKVClient(), txn.store.GetOracle())
-	var reqEndKey []byte
-	// var reqStartKey []byte
 	var loc *locate.KeyLocation
 	// var resolvingRecordToken *int
 	var err error
@@ -30,23 +28,18 @@ func (txn *KVTxn) BackfillScan(startKey []byte, endKey []byte, batchSize int) (k
 			return kvrpcpb.DDLBackfillScanResponse{}, err
 		}
 
-		reqEndKey = endKey
-		if len(reqEndKey) == 0 ||
-			(len(loc.EndKey) > 0 && bytes.Compare(loc.EndKey, reqEndKey) < 0) {
-			reqEndKey = loc.EndKey
+		if len(endKey) == 0 ||
+			(len(loc.EndKey) > 0 && bytes.Compare(loc.EndKey, endKey) < 0) {
+			endKey = loc.EndKey
 		}
 
-		var reqType tikvrpc.CmdType
-		var sreq any
-		reqType = tikvrpc.CmdDDLBackfillScan
-		sreq = &kvrpcpb.DDLBackfillScanRequest{
+		sreq := &kvrpcpb.DDLBackfillScanRequest{
 			StartKey:   startKey,
-			EndKey:     reqEndKey,
+			EndKey:     endKey,
+			Limit: uint32(batchSize),
 			Version:    txn.startTS,
 		}
-
-
-		req := tikvrpc.NewRequest(reqType, sreq, kvrpcpb.Context{})
+		req := tikvrpc.NewRequest(tikvrpc.CmdDDLBackfillScan, sreq, kvrpcpb.Context{})
 		if readType != "" {
 			req.ReadType = readType
 			req.IsRetryRequest = true
@@ -61,56 +54,24 @@ func (txn *KVTxn) BackfillScan(startKey []byte, endKey []byte, batchSize int) (k
 		}
 		readType = req.ReadType
 		if regionErr != nil {
-			// logutil.BgLogger().Debug("scanner getData failed",
-			// 	zap.Stringer("regionErr", regionErr))
-			// if err = retry.MayBackoffForRegionError(regionErr, bo); err != nil {
-			// 	return err
-			// }
-			// continue
-			return kvrpcpb.DDLBackfillScanResponse{}, err
+			// Leave the region error for caller to retry.
+			return kvrpcpb.DDLBackfillScanResponse{
+				RegionError: regionErr,
+			}, err
 		}
 		if resp.Resp == nil {
 			return kvrpcpb.DDLBackfillScanResponse{}, errors.WithStack(tikverr.ErrBodyMissing)
 		}
+		err = txn.store.CheckVisibility(txn.startTS)
+		if err != nil {
+			return err
+		}
 
 		// var keyErr *kvrpcpb.KeyError
 		// var kvPairs []*kvrpcpb.KvPair
-		// cmdScanResp := resp.Resp.(*kvrpcpb.DDLBackfillScanResponse)
-			// keyErr = cmdScanResp.GetError()
-		// kvPairs = cmdScanResp.Pairs
-
-		// err = txn.store.CheckVisibility(txn.startTS)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// When there is a response-level key error, the returned pairs are incomplete.
-		// We should resolve the lock first and then retry the same request.
-		// if keyErr != nil {
-		// 	lock, err := txnlock.ExtractLockFromKeyErr(keyErr)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// 	locks := []*txnlock.Lock{lock}
-		// 	if resolvingRecordToken == nil {
-		// 		token := s.snapshot.store.GetLockResolver().RecordResolvingLocks(locks, s.snapshot.version)
-		// 		resolvingRecordToken = &token
-		// 		defer s.snapshot.store.GetLockResolver().ResolveLocksDone(s.snapshot.version, *resolvingRecordToken)
-		// 	} else {
-		// 		s.snapshot.store.GetLockResolver().UpdateResolvingLocks(locks, s.snapshot.version, *resolvingRecordToken)
-		// 	}
-		// 	msBeforeExpired, err := s.snapshot.store.GetLockResolver().ResolveLocks(bo, s.snapshot.version, locks)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// 	if msBeforeExpired > 0 {
-		// 		err = bo.BackoffWithMaxSleepTxnLockFast(int(msBeforeExpired), errors.Errorf("key is locked during scanning"))
-		// 		if err != nil {
-		// 			return err
-		// 		}
-		// 	}
-		// 	continue
-		// }
+		cmdResp := resp.Resp.(*kvrpcpb.DDLBackfillScanResponse)
+		// keyErr := cmdResp.GetError()
+		kvPairs := cmdResp.Pairs
 
 		// Check if kvPair contains error, it should be a Lock.
 		// for _, pair := range kvPairs {
@@ -124,21 +85,23 @@ func (txn *KVTxn) BackfillScan(startKey []byte, endKey []byte, batchSize int) (k
 		// }
 
 		// s.cache, s.idx = kvPairs, 0
-		// if len(kvPairs) < s.batchSize {
-		// 	// No more data in current Region. Next getData() starts
-		// 	// from current Region's endKey.
-		// 	if !s.reverse {
-		// 		s.nextStartKey = loc.EndKey
-		// 	} else {
-		// 		s.nextEndKey = reqStartKey
-		// 	}
-		// 	if (!s.reverse && (len(loc.EndKey) == 0 || (len(s.endKey) > 0 && kv.CmpKey(s.nextStartKey, s.endKey) >= 0))) ||
-		// 		(s.reverse && (len(loc.StartKey) == 0 || (len(s.nextStartKey) > 0 && kv.CmpKey(s.nextStartKey, s.nextEndKey) >= 0))) {
-		// 		// Current Region is the last one.
-		// 		s.eof = true
-		// 	}
-		// 	return kvrpcpb.DDLBackfillScanResponse{}, err
-		// }
+
+		if len(kvPairs) < batchSize {
+			// No more data in current Region. Next getData() starts
+			// from current Region's endKey.
+			if !s.reverse {
+				s.nextStartKey = loc.EndKey
+			} else {
+				s.nextEndKey = reqStartKey
+			}
+			if (!s.reverse && (len(loc.EndKey) == 0 || (len(s.endKey) > 0 && kv.CmpKey(s.nextStartKey, s.endKey) >= 0))) ||
+				(s.reverse && (len(loc.StartKey) == 0 || (len(s.nextStartKey) > 0 && kv.CmpKey(s.nextStartKey, s.nextEndKey) >= 0))) {
+				// Current Region is the last one.
+				s.eof = true
+			}
+			return kvrpcpb.DDLBackfillScanResponse{}, err
+		}
+
 		// next getData() starts from the last key in kvPairs (but skip
 		// it by appending a '\x00' to the key). Note that next getData()
 		// may get an empty response if the Region in fact does not have
