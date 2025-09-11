@@ -202,6 +202,19 @@ type twoPhaseCommitter struct {
 		primaryOp                    kvrpcpb.Op
 		pipelinedStart, pipelinedEnd []byte
 	}
+	skipNewerChangeKeys struct {
+		sync.Mutex
+		data map[string]struct{}
+	}
+}
+
+func (c *twoPhaseCommitter) appendSkipNewerChangeKey(key []byte) {
+	c.skipNewerChangeKeys.Lock()
+	defer c.skipNewerChangeKeys.Unlock()
+	if c.skipNewerChangeKeys.data == nil {
+		c.skipNewerChangeKeys.data = make(map[string]struct{})
+	}
+	c.skipNewerChangeKeys.data[string(key)] = struct{}{}
 }
 
 type memBufferMutations struct {
@@ -2029,17 +2042,22 @@ func (c *twoPhaseCommitter) commitTxn(ctx context.Context, commitDetail *util.Co
 }
 
 func (c *twoPhaseCommitter) stripNoNeedCommitKeys() {
-	if !c.hasNoNeedCommitKeys {
+	if !c.hasNoNeedCommitKeys && c.skipNewerChangeKeys.data == nil {
 		return
 	}
 	m := c.mutations
 	var newIdx int
 	for oldIdx := range m.handles {
 		key := m.GetKey(oldIdx)
+		if _, ok := c.skipNewerChangeKeys.data[string(key)]; ok {
+			continue
+		}
+
 		flags, err := c.txn.GetMemBuffer().GetFlags(key)
 		if err == nil && flags.HasPrewriteOnly() {
 			continue
 		}
+
 		m.handles[newIdx] = m.handles[oldIdx]
 		newIdx++
 	}

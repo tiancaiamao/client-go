@@ -235,6 +235,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 			Version:    s.startTS(),
 			KeyOnly:    s.snapshot.keyOnly,
 			SampleStep: s.snapshot.sampleStep,
+			SkipNewerChange: s.snapshot.skipNewerChange,
 		}
 		if s.reverse {
 			sreq.StartKey = s.nextEndKey

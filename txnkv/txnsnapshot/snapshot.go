@@ -125,6 +125,7 @@ type KVSnapshot struct {
 	committedLocks  util.TSSet
 	scanBatchSize   int
 	readTimeout     time.Duration
+	skipNewerChange bool
 
 	// Cache the result of Get and BatchGet.
 	// The invariance is that calling Get or BatchGet multiple times using the same start ts,
@@ -1014,6 +1015,13 @@ func (s *KVSnapshot) SetResourceGroupName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mu.resourceGroupName = name
+}
+
+// SetSkipNewerChanges sets a special flag for transaction commit.
+// When a mutation meets newer version change, the mutation is discard silently, and that
+// case is not consider as conflict.
+func (s *KVSnapshot) SetSkipNewerChange() {
+	s.skipNewerChange = true
 }
 
 // SnapCacheHitCount gets the snapshot cache hit count. Only for test.

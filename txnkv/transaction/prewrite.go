@@ -179,6 +179,7 @@ func (c *twoPhaseCommitter) buildPrewriteRequest(batch batchMutations, txnSize u
 		MaxCommitTs:            c.maxCommitTS,
 		AssertionLevel:         assertionLevel,
 		ForUpdateTsConstraints: forUpdateTSConstraints,
+		SkipNewerChange: c.txn.skipNewerChange,
 	}
 
 	if _, err := util.EvalFailpoint("invalidMaxCommitTS"); err == nil {
@@ -468,6 +469,15 @@ func (handler *prewrite1BatchReqHandler) extractKeyErrs(keyErrs []*kvrpcpb.KeyEr
 		if alreadyExist := keyErr.GetAlreadyExist(); alreadyExist != nil {
 			e := &tikverr.ErrKeyExist{AlreadyExist: alreadyExist}
 			return nil, handler.committer.extractKeyExistsErr(e)
+		}
+
+		if handler.committer.txn.skipNewerChange {
+			// when skipNewerChange flag is set, prewrite conflict can be ignored
+			// but commit in 2PC should skip those keys too.
+			if conflict := keyErr.GetConflict(); conflict != nil {
+				handler.committer.appendSkipNewerChangeKey(conflict.Key)
+				continue
+			}
 		}
 
 		// Extract lock from key error

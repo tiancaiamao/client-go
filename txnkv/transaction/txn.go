@@ -211,6 +211,7 @@ type KVTxn struct {
 	flushBatchDurationEWMA ewma.MovingAverage
 
 	prewriteEncounterLockPolicy PrewriteEncounterLockPolicy
+	skipNewerChange bool
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -527,6 +528,13 @@ func (txn *KVTxn) SetAssertionLevel(assertionLevel kvrpcpb.AssertionLevel) {
 // SetPrewriteEncounterLockPolicy specifies the behavior when prewrite encounters locks.
 func (txn *KVTxn) SetPrewriteEncounterLockPolicy(policy PrewriteEncounterLockPolicy) {
 	txn.prewriteEncounterLockPolicy = policy
+}
+
+// SetSkipNewerChanges sets a special flag for transaction commit.
+// When a mutation meets newer version change, the mutation is discard silently, and that
+// case is not consider as conflict.
+func (txn *KVTxn) SetSkipNewerChange() {
+	txn.skipNewerChange = true
 }
 
 // IsPessimistic returns true if it is pessimistic.
