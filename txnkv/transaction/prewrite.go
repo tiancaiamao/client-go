@@ -35,10 +35,13 @@
 package transaction
 
 import (
+	"fmt"
+	"bytes"
 	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
+	"encoding/hex"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/kvproto/pkg/errorpb"
@@ -467,20 +470,45 @@ func (handler *prewrite1BatchReqHandler) handleRegionErr(regionErr *errorpb.Erro
 func (handler *prewrite1BatchReqHandler) extractKeyErrs(keyErrs []*kvrpcpb.KeyError) ([]*txnlock.Lock, error) {
 	var locks []*txnlock.Lock
 	logged := make(map[uint64]struct{})
+
+	// when skipNewerChange flag is set, prewrite conflict can be ignored
+	if handler.committer.txn.skipNewerChange {
+		// Collect conflict error to the first part of the array
+		// After this, keyErrs[0:pos] are conflicts and keyErrs[pos:] are other error
+		pos := 0
+		for i :=0; i<len(keyErrs); i++ {
+			if conflict := keyErrs[i].GetConflict(); conflict != nil {
+				keyErrs[pos], keyErrs[i] = keyErrs[i], keyErrs[pos]
+				pos++
+			}
+		}
+
+		pkConflict := false
+		for _, keyErr := range keyErrs[:pos] {
+			conflictKey := keyErr.GetConflict().Key
+			fmt.Println("conflict on key ==", hex.EncodeToString(conflictKey))
+			if bytes.Equal(conflictKey, handler.committer.primaryKey) {
+				fmt.Println("conflict on primary key ==", handler.committer.primaryKey)
+				pkConflict = true
+				break
+			}
+		}
+
+		// conflict on primary key cannot be skipped, because we cannot skip writing primary key
+		if !pkConflict {
+			for _, keyErr := range keyErrs[:pos] {
+				handler.committer.appendSkipNewerChangeKey(keyErr.GetConflict().Key)
+			}
+			// Now we can skip conflict keys
+			keyErrs = keyErrs[pos:]
+		}
+	}
+
 	for _, keyErr := range keyErrs {
 		// Check already exists error
 		if alreadyExist := keyErr.GetAlreadyExist(); alreadyExist != nil {
 			e := &tikverr.ErrKeyExist{AlreadyExist: alreadyExist}
 			return nil, handler.committer.extractKeyExistsErr(e)
-		}
-
-		if handler.committer.txn.skipNewerChange {
-			// when skipNewerChange flag is set, prewrite conflict can be ignored
-			// but commit in 2PC should skip those keys too.
-			if conflict := keyErr.GetConflict(); conflict != nil {
-				handler.committer.appendSkipNewerChangeKey(conflict.Key)
-				continue
-			}
 		}
 
 		// Extract lock from key error
