@@ -406,6 +406,9 @@ func (handler *prewrite1BatchReqHandler) sendReqAndCheck() (retryable bool, err 
 	if e != nil {
 		return false, e
 	}
+	if len(locks) == 0 {
+		return false, handler.handleSingleBatchSucceed(reqBegin, prewriteResp)
+	}
 
 	if err := handler.resolveLocks(locks); err != nil {
 		return false, err
