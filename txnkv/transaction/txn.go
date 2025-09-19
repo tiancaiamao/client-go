@@ -211,7 +211,7 @@ type KVTxn struct {
 	flushBatchDurationEWMA ewma.MovingAverage
 
 	prewriteEncounterLockPolicy PrewriteEncounterLockPolicy
-	skipNewerChange bool
+	skipNewerChange             bool
 }
 
 // NewTiKVTxn creates a new KVTxn.
@@ -530,13 +530,6 @@ func (txn *KVTxn) SetPrewriteEncounterLockPolicy(policy PrewriteEncounterLockPol
 	txn.prewriteEncounterLockPolicy = policy
 }
 
-// SetSkipNewerChanges sets a special flag for transaction commit.
-// When a mutation meets newer version change, the mutation is discard silently, and that
-// case is not consider as conflict.
-func (txn *KVTxn) SetSkipNewerChange() {
-	txn.skipNewerChange = true
-}
-
 // IsPessimistic returns true if it is pessimistic.
 func (txn *KVTxn) IsPessimistic() bool {
 	return txn.isPessimistic
@@ -750,6 +743,13 @@ func (txn *KVTxn) GetScope() string {
 	return txn.scope
 }
 
+// DDLBackfillTxnCommit commits the transaction operations to KV store.
+// This is a special API provided for DDL backfill transaction only.
+func (txn *KVTxn) DDLBackfillTxnCommit(ctx context.Context) error {
+	txn.skipNewerChange = true
+	return txn.commitImpl(ctx)
+}
+
 // Commit commits the transaction operations to KV store.
 func (txn *KVTxn) Commit(ctx context.Context) error {
 	if span := opentracing.SpanFromContext(ctx); span != nil && span.Tracer() != nil {
@@ -758,7 +758,10 @@ func (txn *KVTxn) Commit(ctx context.Context) error {
 		ctx = opentracing.ContextWithSpan(ctx, span1)
 	}
 	defer trace.StartRegion(ctx, "CommitTxn").End()
+	return txn.commitImpl(ctx)
+}
 
+func (txn *KVTxn) commitImpl(ctx context.Context) error {
 	if !txn.valid {
 		return tikverr.ErrInvalidTxn
 	}
