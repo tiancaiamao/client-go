@@ -155,6 +155,12 @@ func (s *Scanner) Next() error {
 		}
 		// Try to resolve the lock
 		if current.GetError() != nil {
+			// When skipNewerChange is option set, the KV lock is returned to the caller
+			if collector := s.snapshot.skipNewerChange; collector != nil {
+				collector.CollectLockKV(current)
+				continue
+			}
+
 			// 'current' would be modified if the lock being resolved
 			if err := s.resolveCurrentLock(bo, current); err != nil {
 				s.Close()
@@ -235,7 +241,7 @@ func (s *Scanner) getData(bo *retry.Backoffer) error {
 			Version:    s.startTS(),
 			KeyOnly:    s.snapshot.keyOnly,
 			SampleStep: s.snapshot.sampleStep,
-			SkipNewerChange: s.snapshot.skipNewerChange,
+			SkipNewerChange: s.snapshot.skipNewerChange != nil,
 		}
 		if s.reverse {
 			sreq.StartKey = s.nextEndKey
