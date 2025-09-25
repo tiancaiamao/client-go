@@ -116,3 +116,5 @@ replace (
 
 	github.com/tikv/client-go/v2 => ../
 )
+
+replace github.com/pingcap/kvproto => github.com/tiancaiamao/kvproto v0.0.0-20250911071333-a9599c2d6c5e

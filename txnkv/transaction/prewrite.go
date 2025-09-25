@@ -417,7 +417,6 @@ func (handler *prewrite1BatchReqHandler) sendReqAndCheck() (retryable bool, err 
 		return false, err
 	}
 	return true, nil
-
 }
 
 // handleRegionErr handles region errors when sending the prewrite request.

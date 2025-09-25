@@ -499,3 +499,89 @@ func (s *testSnapshotSuite) TestReplicaReadAdjuster() {
 		}
 	}
 }
+
+func (s *testSnapshotSuite) TestSkipNewerChange() {
+	s.testSkipNewerChangeScan(true)
+	s.testSkipNewerChangeScan(false)
+}
+
+type lockKeysCollector struct {
+	locks []*kvrpcpb.KvPair
+}
+
+func (c *lockKeysCollector) CollectLockKV(kvpair *kvrpcpb.KvPair) {
+	c.locks = append(c.locks, kvpair)
+}
+
+func (s *testSnapshotSuite) testSkipNewerChangeScan(setOption bool) {
+	txn, err := s.store.Begin()
+	s.Nil(err)
+	txn.Set([]byte("key1"), []byte("val1"))
+	txn.Set([]byte("key2"), []byte("val2"))
+	txn.Set([]byte("key3"), []byte("val3"))
+	s.Nil(txn.Commit(context.Background()))
+
+	if setOption {
+		txn1 := s.beginTxn()
+		txn1.Set([]byte("key4"), []byte("val4"))
+		committer, err := txn1.NewCommitter(3)
+		s.Nil(err)
+		committer.SetLockTTL(3000)
+		s.False(committer.IsOnePC())
+		s.Nil(committer.PrewriteAllMutations(context.Background()))
+		defer txn1.Rollback()
+	}
+
+	// key2 meets newer commit
+	txn, err = s.store.Begin()
+	ts := txn.StartTS()
+	snap := s.store.GetSnapshot(ts)
+	s.Nil(err)
+	txn.Set([]byte("key2"), []byte("val2-2"))
+	s.Nil(txn.Commit(context.Background()))
+
+	// key3 meets newer lock
+	txn2, err := s.store.Begin()
+	lockCtx := kv.NewLockCtx(txn2.StartTS(), 50*1000, time.Now())
+	err = txn2.LockKeys(context.Background(), lockCtx, []byte("key1"))
+	s.Nil(err)
+	defer txn2.Rollback()
+
+	checkResult := func(s *testSnapshotSuite, snap txnsnapshot.SnapshotProbe, res ...string) {
+		key := []byte("key")
+		iter, err := snap.Iter(key, kv.PrefixNextKey(key))
+		s.Nil(err)
+		defer iter.Close()
+
+		var i int
+		for i = 0; iter.Valid(); i += 2 {
+			s.Equal(string(iter.Key()), res[i])
+			s.Equal(string(iter.Value()), res[i+1])
+			iter.Next()
+		}
+		s.Equal(i, len(res))
+
+		// Again, with reverse scan (TODO)
+		// iter, err := snap.IterReverse(key.PrefixNext(), key)
+		// require.NoError(t, err)
+		// defer iter.Close()
+		// for i=len(res)-1; iter.Valid(); i-=2 {
+		// 	fmt.Println("==== ", iter.Key(), iter.Value(), res[i-1], res[i])
+		// 	require.Equal(t, string(iter.Value()), res[i])
+		// 	require.Equal(t, string(iter.Key()), res[i-1])
+		// 	iter.Next()
+		// }
+	}
+
+	if setOption {
+		var collector lockKeysCollector
+		snap.SetSkipNewerChange(&collector)
+		checkResult(s, snap, "key1", "val1", "key3", "val3")
+		s.Len(collector.locks, 1)
+		s.Equal(collector.locks[0].Key, []byte("key4"))
+		s.Nil(collector.locks[0].Value)
+		s.NotNil(collector.locks[0].Error)
+	} else {
+		checkResult(s, snap, "key1", "val1", "key2", "val2", "key3", "val3")
+	}
+}
